@@ -3,7 +3,7 @@ use Carp;
 use strict;
 use vars qw ( $VERSION $METH $METHOD $AUTOLOAD );
 
-$VERSION = '0.98';
+$VERSION = '0.99';
 
 sub new
 {
@@ -90,6 +90,8 @@ sub AUTOLOAD
 	die("cannot find method name");
     }
 
+    my $dispatch = $self->{obj}->can($METHOD);
+
     ############################
     # construct the subroutine #
     ############################
@@ -106,9 +108,9 @@ sub AUTOLOAD
 	}
 
 	if (wantarray) {
-	    my @null = $pre->(@args);
+	    () = $pre->(@args);
 	    my @return_values = $decorator->{obj}->$METHOD(@args);
-	    @null = $post->(@args);
+	    () = $post->(@args);
 	    return @return_values;
 	} else {
 	    $pre->(@args);

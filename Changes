@@ -1,6 +1,10 @@
 Revision history for Perl extension Class::Decorator.
 
-0.98  Tue Aug 21 17:46:53 2002
+0.99  Tue Sept 16 18:46:12 2002
+	- fixed date of previous changelog
+	- fixed version number in README
+
+0.98  Tue Sept 16 18:09:50 2002
 	- eval() avoided (thanks swalters)
 	- isa() now dispatches correctly (thanks swalters)
 	- can() now dispatches correctly (me)

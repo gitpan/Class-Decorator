@@ -98,6 +98,7 @@ if ($array[0] == 1) {
 }
 
 package Foo::Bar;
+use strict;
 sub new
 {
     bless {}, shift;

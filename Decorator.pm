@@ -1,20 +1,19 @@
 package Class::Decorator;
+use Carp;
+use strict;
+use vars qw ( $VERSION $METH $METHOD $AUTOLOAD );
 
-use vars qw ( $VERSION $METH );
-
-$VERSION = '0.01';
-my $auto_1;
-my $auto_2;
-my $auto_3;
+$VERSION = '0.02';
 
 sub new
 {
     my ($caller, %args) = @_;
     my $class = ref($caller) || $caller;
     bless {
-	pre  => $args{pre}  || sub {}, # performed before dispatched method
-	post => $args{post} || sub {}, # performed after dispatched method
-	obj  => $args{obj}  || die("decorator must be constructed with a component to be decorated")
+	pre     => $args{pre}     || sub {}, # performed before dispatched method
+	post    => $args{post}    || sub {}, # performed after dispatched method
+	obj     => $args{obj}     || croak("decorator must be constructed with a component to be decorated"),
+	methods => $args{methods} || {}
 	}, $class;
 }
 
@@ -23,52 +22,73 @@ sub DESTROY {}
 sub AUTOLOAD
 {
     my ($self, @args) = @_;
-    $AUTOLOAD =~ /.+::(.+)$/;
-    $METH = $1;
-    my $auto = '';
-    $auto .= $auto_1;
-    $auto .= '        @return_values = $decorator->{obj}->'.$METH.'(@args);';
-    $auto .= $auto_2;
-    $auto .= '        $return_value = $decorator->{obj}->'.$METH.'(@args);';
-    $auto .= $auto_3;
+
+    # check to see whether method name is of form Foo::Bar::Baz
+    if ($AUTOLOAD =~ /.+::(.+)$/) {
+	$METHOD = $METH = $1; # $METH for backward compaitibility (v0.01)
+    } else {
+	die("cannot find method name");
+    }
+
+    ###################################
+    # find out pre- and post- methods #
+    ###################################
+    my ($pre, $post) = ('{pre}', '{post}');
+    if (exists ${$self->{methods}}{$METHOD}) {
+	if (exists ${$self->{methods}->{$METHOD}}{pre}) {
+	    $pre = '{methods}->{'.$METHOD.'}->{pre}';
+	}
+	if (exists ${$self->{methods}->{$METHOD}}{post}) {
+	    $post = '{methods}->{'.$METHOD.'}->{post}';
+	}
+    }
+    
+    ############################
+    # construct the subroutine #
+    ############################
+    my $auto;
+    $auto .= '$sub = sub {'."\n";
+    $auto .= '    my ($decorator, @args) = @_;'."\n";
+    $auto .= '    $METHOD = $METH = "'.$METHOD.'";'."\n";
+    $auto .= '    if (wantarray) {'."\n";
+    $auto .= '        my @null;'."\n";
+    $auto .= '        my @return_values;'."\n";
+    $auto .= '        @null = $decorator->'.$pre.'->(@args);'."\n";
+    $auto .= '        @return_values = $decorator->{obj}->'.$METHOD.'(@args);'."\n";
+    $auto .= '        @null = $decorator->'.$post.'->(@args);'."\n";
+    $auto .= '        return @return_values;'."\n";
+    $auto .= '    } else {'."\n";
+    $auto .= '        my $return_value;'."\n";
+    $auto .= '        $decorator->'.$pre.'->(@args);'."\n";
+    $auto .= '        $return_value = $decorator->{obj}->'.$METHOD.'(@args);'."\n";
+    $auto .= '        $decorator->'.$post.'->(@args);'."\n";
+    $auto .= '        return $return_value;'."\n";
+    $auto .= '    }'."\n";
+    $auto .= '}'."\n";
+
+#    print "$auto\n"; # for debugging
+
+    ###########################
+    # load the subroutine     #
+    ###########################
+    my $sub = sub {};
     eval($auto);
-    *{$AUTOLOAD} = $auto;
+    {
+	no strict "refs"; # keep following line happy
+	*{$AUTOLOAD} = $sub;
+    }
+
+    ############################
+    # call the subroutine      #
+    ############################
     if (wantarray) {
-	my @return_values = $auto->($self, @args);
+	my @return_values = $sub->($self, @args);
 	return @return_values;
     } else {
-	my $return_value = $auto->($self, @args);
+	my $return_value = $sub->($self, @args);
 	return $return_value;
     }
 }
-
-$auto_1 = <<'EO1';
-$auto = sub {
-    my ($decorator, @args) = @_;
-    $AUTOLOAD =~ /.+::(.+)$/;
-    $METH = $1;
-    if (wantarray) {
-        my @null;
-        my @return_values;
-        @null = $decorator->{pre}->(@args);
-EO1
-
-$auto_2 = <<'EO2';
-
-        @null = $decorator->{post}->(@args);
-        return @return_values;
-    } else {
-        my $return_value;
-        $decorator->{pre}->(@args);
-EO2
-
-$auto_3 = <<'EO3';
-
-        $decorator->{post}->(@args);
-        return $return_value;
-    }
-}
-EO3
 
 1;
 __END__
@@ -90,33 +110,97 @@ Class::Decorator - Attach additional responsibilites to an object. A generic wra
 
 =head1 DESCRIPTION
 
-Decorator objects allow additional functionality to be dynamically added to objects. In this implementation, the user can supply two subroutine references (pre and post) to be performed before (pre) and after (post) any method call to an object (obj).
+Decorator objects allow additional functionality to be dynamically added to objects. 
+In this implementation, the user can supply two subroutine references (pre and post) 
+to be performed before (pre) and after (post) any method call to an object (obj).
 
 Both 'pre' and 'post' arguments to the contructor are optional. The 'obj' argument is mandated.
 
-The pre and post methods receive the arguments that are supplied to the decorated method, and therefore Class::Decorator can be used effectively in debugging or logging applications. Return values from pre and post are ignored.
+The pre and post methods receive the arguments that are supplied to the decorated method, 
+and therefore Class::Decorator can be used effectively in debugging or logging 
+applications. Return values from pre and post are ignored.
 
-Decorator objects can themselves be decorated. Therefore, it is possible to have an object that performs work, which is decorated by a logging decorator, which in turn is decorated by a debugging decorator.
+Decorator objects can themselves be decorated. Therefore, it is possible to have an 
+object that performs work, which is decorated by a logging decorator, which in turn 
+is decorated by a debugging decorator. Decorated objects can use wantarray(), but should 
+not use caller() [yet].
 
-=head2 VARIABLES
+To decorate a single method, or several methods with differing decorations, use the 
+alternative 'methods' constructor:
 
-$Class::Decorator::METH is set to the name of the current method being called. So, a simple debugging script might decorate an object like this:
+  use Class::Decorator;
+  my $object = Foo::Bar->new(); # the object to be decorated
+  my $decorator = Class::Decorator->new(
+    obj  => $object,
+    methods => {
+        foobar => {
+            pre  => sub{print "before foobar()\n"},
+            post => sub{print "after foobar()\n"}
+        }
+    }
+  );
+  $decorator->foobar(@args); # decorated
+  $decorator->barbaz(@args); # not decorated
+
+
+=head2 $Class::Decorator::METHOD
+
+$Class::Decorator::METHOD is set to the name of the current method being called. 
+So, a simple debugging script might decorate an object like this:
 
   my $debugger = Class::Decorator->new(
     obj  => $object,
-    pre  => sub{print "entering $Class::Decorator::METH\n"},
-    post => sub{print "leaving $Class::Decorator::METH\n"}
+    pre  => sub{print "entering $Class::Decorator::METHOD\n"},
+    post => sub{print "leaving $Class::Decorator::METHOD\n"}
   );
 
-Arguments are supplied to the pre- and post- methods, but return values are ignored. Note that the first argument in the list of arguments supplied to pre- and post- is the decorated object (i.e. the second argument $_[1] is the start of the true list of arguments).
+Arguments are supplied to the pre- and post- methods, but return values are ignored. 
+Note that the first argument in the list of arguments supplied to pre- and post- 
+is the decorated object (i.e. the second argument $_[1] is the start of the true 
+list of arguments).
 
-=head2 WARNING
+=head2 NOTES AND WARNINGS
 
-The DESTROY method is currently disabled. This is only important to those users who have implemented DESTROY for cleaning up circular references or for some other reason.
+The DESTROY method is currently disabled. This is only important to those users who 
+have implemented DESTROY for cleaning up circular references or for some other reason.
+Unfortunately, it is not possible to say guess the wrapped object needs to be 
+destroyed when DESTROY is called on the decorator - the decorator may be eligible
+for garbage collection when the decorated object is not.
+
+The caller() function should not be relied upon in the decorated object - it will
+return information about the decorator.
+
+Member variables of wrapped objects cannot be accessed directly through the 
+decorator. For example, if it is usually possible to access a member variable 
+'foo' through the undecorated object like so:
+
+  $object->{foo};
+
+it will not be possible to acces this variable through the decorated object by 
+using $decorator->{foo}. This follows standard object-oriented conventions that 
+all member variables should only be accessible through accessors [i.e. by using
+$object->get_foo() ]. In object-oriented parlance, this is known as encapsulation.
 
 =head1 SEE ALSO
 
-L<Class::Null> - an alternative to wrapping an object is providing an object that performs nothing (i.e. removing functionality when it isn't needed, rather than adding it when required).
+L<Class::Null> - an alternative to wrapping an object is providing an object that 
+performs nothing (i.e. removing functionality when it isn't needed, rather than 
+adding it when required).
+
+L<Class::Hook> - decorates the method for an entire class, rather than for 
+a single object.
+
+L<Hook::PrePostCall> - preprocesses the arguments to a subroutine, and filters the 
+subroutine's results.
+
+L<Hook::WrapSub> - similar to L<Class::Hook>.
+
+L<Hook::LexWrap> - again, decorates a method for an entire class, rather than for a 
+single object, but magically allows wrapped method to see correct return values from 
+caller() funtion.
+
+The Decorator Pattern is fully explained in Design Patterns, Elements of Reusable 
+Object-Oriented Software (Gamma et al., 1994).
 
 =head1 AUTHOR
 
@@ -126,6 +210,7 @@ Nigel Wetters, E<lt>nwetters@cpan.orgE<gt>
 
 Copyright 2002 by Nigel Wetters, E<lt>nwetters@cpan.orgE<gt>
 
-This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+This library is free software; you can redistribute it and/or modify it under the 
+same terms as Perl itself.
 
 =cut

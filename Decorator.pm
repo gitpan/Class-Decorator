@@ -3,7 +3,7 @@ use Carp;
 use strict;
 use vars qw ( $VERSION $METH $METHOD $AUTOLOAD );
 
-$VERSION = '0.02';
+$VERSION = '0.98';
 
 sub new
 {
@@ -19,6 +19,66 @@ sub new
 
 sub DESTROY {}
 
+sub VERSION
+{
+    my ($self, @args) = @_;
+    my ($pre, $post) = ($self->{pre}, $self->{post});
+    
+    if (exists ${$self->{methods}}{VERSION}) {
+	if (exists ${$self->{methods}->{VERSION}}{pre}) {
+	    $pre = ${$self->{methods}->{VERSION}}{pre};
+	}
+	if (exists ${$self->{methods}->{VERSION}}{post}) {
+	    $post = ${$self->{methods}->{VERSION}}{post};
+	}
+    }
+    
+    $pre->(@args);
+    my $return_value = $self->{obj}->VERSION(@args);
+    $post->(@args);
+    return $return_value;
+}
+
+sub isa
+{
+    my ($self, @args) = @_;
+    my ($pre, $post) = ($self->{pre}, $self->{post});
+    
+    if (exists ${$self->{methods}}{isa}) {
+	if (exists ${$self->{methods}->{isa}}{pre}) {
+	    $pre = ${$self->{methods}->{isa}}{pre};
+	}
+	if (exists ${$self->{methods}->{isa}}{post}) {
+	    $post = ${$self->{methods}->{isa}}{post};
+	}
+    }
+    
+    $pre->(@args);
+    my $return_value = $self->{obj}->isa(@args);
+    $post->(@args);
+    return $return_value;
+}
+
+sub can
+{
+    my ($self, @args) = @_;
+    my ($pre, $post) = ($self->{pre}, $self->{post});
+    
+    if (exists ${$self->{methods}}{can}) {
+	if (exists ${$self->{methods}->{can}}{pre}) {
+	    $pre = ${$self->{methods}->{can}}{pre};
+	}
+	if (exists ${$self->{methods}->{can}}{post}) {
+	    $post = ${$self->{methods}->{can}}{post};
+	}
+    }
+    
+    $pre->(@args);
+    my $return_value = $self->{obj}->can(@args);
+    $post->(@args);
+    return $return_value;
+}
+
 sub AUTOLOAD
 {
     my ($self, @args) = @_;
@@ -30,54 +90,42 @@ sub AUTOLOAD
 	die("cannot find method name");
     }
 
-    ###################################
-    # find out pre- and post- methods #
-    ###################################
-    my ($pre, $post) = ('{pre}', '{post}');
-    if (exists ${$self->{methods}}{$METHOD}) {
-	if (exists ${$self->{methods}->{$METHOD}}{pre}) {
-	    $pre = '{methods}->{'.$METHOD.'}->{pre}';
-	}
-	if (exists ${$self->{methods}->{$METHOD}}{post}) {
-	    $post = '{methods}->{'.$METHOD.'}->{post}';
-	}
-    }
-    
     ############################
     # construct the subroutine #
     ############################
-    my $auto;
-    $auto .= '$sub = sub {'."\n";
-    $auto .= '    my ($decorator, @args) = @_;'."\n";
-    $auto .= '    $METHOD = $METH = "'.$METHOD.'";'."\n";
-    $auto .= '    if (wantarray) {'."\n";
-    $auto .= '        my @null;'."\n";
-    $auto .= '        my @return_values;'."\n";
-    $auto .= '        @null = $decorator->'.$pre.'->(@args);'."\n";
-    $auto .= '        @return_values = $decorator->{obj}->'.$METHOD.'(@args);'."\n";
-    $auto .= '        @null = $decorator->'.$post.'->(@args);'."\n";
-    $auto .= '        return @return_values;'."\n";
-    $auto .= '    } else {'."\n";
-    $auto .= '        my $return_value;'."\n";
-    $auto .= '        $decorator->'.$pre.'->(@args);'."\n";
-    $auto .= '        $return_value = $decorator->{obj}->'.$METHOD.'(@args);'."\n";
-    $auto .= '        $decorator->'.$post.'->(@args);'."\n";
-    $auto .= '        return $return_value;'."\n";
-    $auto .= '    }'."\n";
-    $auto .= '}'."\n";
+    my $sub = sub {
+	my ($decorator, @args) = @_;
+	my ($pre, $post) = ($decorator->{pre}, $decorator->{post});
+	if (exists ${$decorator->{methods}}{$METHOD}) {
+	    if (exists ${$decorator->{methods}->{$METHOD}}{pre}) {
+		$pre = ${$decorator->{methods}->{$METHOD}}{pre};
+	    }
+	    if (exists ${$decorator->{methods}->{$METHOD}}{post}) {
+		$post = ${$decorator->{methods}->{$METHOD}}{post};
+	    }
+	}
 
-#    print "$auto\n"; # for debugging
-
+	if (wantarray) {
+	    my @null = $pre->(@args);
+	    my @return_values = $decorator->{obj}->$METHOD(@args);
+	    @null = $post->(@args);
+	    return @return_values;
+	} else {
+	    $pre->(@args);
+	    my $return_value = $decorator->{obj}->$METHOD(@args);
+	    $post->(@args);
+	    return $return_value;
+	}
+    };
+    
     ###########################
     # load the subroutine     #
     ###########################
-    my $sub = sub {};
-    eval($auto);
     {
 	no strict "refs"; # keep following line happy
 	*{$AUTOLOAD} = $sub;
     }
-
+    
     ############################
     # call the subroutine      #
     ############################

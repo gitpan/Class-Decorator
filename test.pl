@@ -7,7 +7,7 @@
 
 use Test;
 use strict;
-BEGIN { plan tests => 15 };
+BEGIN { plan tests => 22 };
 use Class::Decorator;
 ok(1); # If we made it this far, we're ok.
 
@@ -95,6 +95,56 @@ if ($array[0] == 1) {
     ok(1);
 } else {
     ok(0);
+}
+
+$dec2 = Class::Decorator->new(
+			      obj  => $dec1,
+			      methods => {
+				  baz => {
+				      pre  => sub{print "before baz()\n"},
+				      post => sub{print "after baz()\n"}
+				  }
+			      }
+			      );
+
+ok(1);
+
+my @array = $dec2->baz();
+if ($array[0] == 1) {
+    ok(1);
+} else {
+    ok(0);
+}
+
+$Foo::Bar::VERSION = 2.43;
+if ($dec2->VERSION(2.43)){
+    ok(1);
+} else {
+    ok(0);
+}
+
+if ($dec2->can("baz")){
+    ok(1);
+} else {
+    ok(0);
+}
+
+if ($dec2->can("bim")){
+    ok(0);
+} else {
+    ok(1);
+}
+
+if ($dec2->isa("Foo::Bar")){
+    ok(1);
+} else {
+    ok(0);
+}
+
+if ($dec2->isa("Bar::Baz")){
+    ok(0);
+} else {
+    ok(1);
 }
 
 package Foo::Bar;
